@@ -1,64 +1,41 @@
-cmake_minimum_required(VERSION 3.16.3)
-project(cppefi C)
+cmake_minimum_required(VERSION 3.16)
 
-if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-endif()
-if (NOT CMAKE_LIBRARY_OUTPUT_DIRECTORY)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
-endif()
+# Nombre del proyecto
+project(UEFIApp LANGUAGES C)
 
-set(CMAKE_C_COMPILER /usr/bin/gcc)
-set(CMAKE_LINKER /usr/bin/ld)
-set(CMAKE_C_CREATE_SHARED_LIBRARY "<CMAKE_LINKER> <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
-
-set(CMAKE_BUILD_TYPE Debug)
+# Define el estándar C
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
-set(ARCH x86_64)
-set(EFI_INCLUDE_PATH /usr/local/include/efi)
-set(LIB_PATH /usr/local/lib)
-set(EFI_LIB_PATH /usr/local/lib)
-set(EFI_CRT_OBJS ${EFI_LIB_PATH}/crt0-efi-${ARCH}.o)
-set(EFI_LDS ${EFI_LIB_PATH}/elf_${ARCH}_efi.lds)
+# Ruta al directorio de MdePkg
+set(EDK2_PATH "${CMAKE_SOURCE_DIR}/MdePkg")
 
-list(APPEND COMPILE_FLAGS "-Ignu-efi-dir/inc -fpic -ffreestanding -fno-stack-protector -fno-stack-check -fshort-wchar -mno-red-zone -maccumulate-outgoing-args")
-set(LINK_FLAGS -nostdlib -T ${EFI_LDS} -shared -Bsymbolic -L ${EFI_LIB_PATH} -L ${LIB_PATH} ${EFI_CRT_OBJS} -lgnuefi -lefi)
+# Agregar definiciones específicas para UEFI
+add_definitions(-fshort-wchar -ffreestanding -fno-stack-protector -fno-exceptions)
 
-include_directories(${EFI_INCLUDE_PATH} ${EFI_INCLUDE_PATH}/${ARCH} ${EFI_INCLUDE_PATH}/protocol)
+# Incluye las rutas de cabeceras UEFI
+include_directories(
+    ${EDK2_PATH}/Include
+    ${EDK2_PATH}/Include/X64
+)
 
-set(TARGET_NAME UEFI_BOOTLOADER)
+# Archivos fuente
+set(SOURCES
+    ${CMAKE_SOURCE_DIR}/src/main.c
+)
 
-file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS *.c)
+# Crea el ejecutable
+add_executable(UEFIApp ${SOURCES})
 
-add_library(${TARGET_NAME} SHARED ${SOURCES})
-target_compile_options(${TARGET_NAME} PRIVATE ${COMPILE_FLAGS})
-target_link_options(${TARGET_NAME} PRIVATE ${LINK_FLAGS})
-target_link_libraries(${TARGET_NAME} PRIVATE efi gnuefi)
+# Configurar el tipo de binario como un ejecutable UEFI
+set_target_properties(UEFIApp PROPERTIES
+    OUTPUT_NAME "UEFIApp"
+    SUFFIX ".efi"
+    LINK_FLAGS "-nostdlib -Wl,-T,${CMAKE_SOURCE_DIR}/linker.ld -Wl,--no-undefined -Wl,-Bsymbolic"
+)
 
-add_custom_command(TARGET "${TARGET_NAME}" POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-
-function(efi_objcopy)
-    cmake_parse_arguments(parsedargs "" "INFILE;OUTFILE" "SECTIONS" ${ARGN})
-    add_custom_command(TARGET "${TARGET_NAME}" POST_BUILD
-            COMMAND ${CMAKE_OBJCOPY}
-            ${parsedargs_SECTIONS}
-            --target=efi-app-x86_64 #  "efi-app", "efi-bsd", "efi-rtd"
-            "${parsedargs_INFILE}"
-            "${parsedargs_OUTFILE}")
-endfunction()
-
-set(ELF_SECTIONS
-        -j .text
-        -j .sdata
-        -j .data
-        -j .dynamic
-        -j .dynsym
-        -j .rel
-        -j .rela
-        -j .reloc)
-
-efi_objcopy(INFILE "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/lib${TARGET_NAME}.so"
-        OUTFILE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET_NAME}.efi"
-        SECTIONS ${ELF_SECTIONS})
+# Enlazar con las bibliotecas de UEFI
+target_link_libraries(UEFIApp
+    -L/usr/lib
+    -lefi -lgnuefi
+)
